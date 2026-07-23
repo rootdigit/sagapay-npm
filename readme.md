@@ -6,12 +6,12 @@ SagaPay (https://sagapay.net) is the world's first free, non-custodial blockchai
 
 ## Installation
 ```bash
-npm install sagapay-sdk
+npm install sagapay
 ```
 
 ## Initialization
 ```javascript
-import { SagaPayClient } from 'sagapay-sdk';
+import { SagaPayClient } from 'sagapay';
 
 const client = new SagaPayClient('your-api-key', 'your-api-secret');
 ```
@@ -188,7 +188,7 @@ The signature is keyed with a **platform-issued IPN secret** — NOT your mercha
 The primary verification is `client.verifyIpn()`, which asks the SagaPay API to confirm the transaction:
 
 ```javascript
-import { SagaPayClient, parseIpnPayload } from 'sagapay-sdk';
+import { SagaPayClient, parseIpnPayload } from 'sagapay';
 
 const client = new SagaPayClient('your-api-key', 'your-api-secret');
 
@@ -215,7 +215,7 @@ app.post('/ipn', express.raw({ type: 'application/json' }), async (req, res) => 
 Optionally, if you have your platform-issued IPN secret, you can additionally verify the signature header locally:
 
 ```javascript
-import { verifyIpnSignature } from 'sagapay-sdk';
+import { verifyIpnSignature } from 'sagapay';
 
 const valid = verifyIpnSignature(
     req.body,                           // exact raw request body (string or Buffer)
