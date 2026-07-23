@@ -1,0 +1,23 @@
+{
+    "compilerOptions": {
+        "target": "ES6",
+        "module": "CommonJS",
+        "outDir": "./dist",
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "declaration": true, // Generates .d.ts files for TypeScript definitions
+        "allowJs": true, // Allows mixing JavaScript and TypeScript
+        "strict": true,
+        "types": [
+            "node"
+        ] // Node builtins (node:crypto, node:buffer) used by webhook.ts
+    },
+    "include": [
+        "index.ts",
+        "types.ts",
+        "webhook.ts"
+    ], // Include the package source files
+    "exclude": [
+        "node_modules"
+    ]
+}

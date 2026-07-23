@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build output (generated on publish via prepublishOnly)
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.*
+
+# Editor directories
+.idea/
+.vscode/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
