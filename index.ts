@@ -49,7 +49,7 @@ export class SagaPayClient {
     private readonly apiKey: string;
     private readonly apiSecret: string;
 
-    constructor(apiKey: string, apiSecret: string, baseURL: string = 'https://api2.sagapay.net') {
+    constructor(apiKey: string, apiSecret: string, baseURL: string = 'https://api2.sagapay.io') {
         this.apiKey = apiKey;
         this.apiSecret = apiSecret;
         this.baseURL = baseURL;

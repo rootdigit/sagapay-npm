@@ -1,6 +1,6 @@
 {
   "name": "sagapay",
-  "version": "4.4.0",
+  "version": "4.4.1",
   "description": "Official JavaScript/TypeScript SDK for SagaPay — a free, non-custodial blockchain payment gateway supporting ERC20, BEP20, TRC20, Polygon and Solana",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -24,9 +24,9 @@
     "webhook",
     "ipn"
   ],
-  "author": "SagaPay <support@sagapay.net> (https://sagapay.net)",
+  "author": "SagaPay <support@sagapay.io> (https://sagapay.io)",
   "license": "MIT",
-  "homepage": "https://sagapay.net",
+  "homepage": "https://sagapay.io",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/rootdigit/sagapay-npm.git"
