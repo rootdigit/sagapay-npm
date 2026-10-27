@@ -43,6 +43,19 @@ export interface CreateWithdrawalResponse {
     fee: string;
 }
 
+export interface CreateWithdrawalOptions {
+    /**
+     * Sent as the `Idempotency-Key` header: 1-128 letters, digits, `-` or `_`.
+     * Retrying with the same key within 24 hours returns the first request's
+     * withdrawal instead of creating a second one. Use one key per payout,
+     * e.g. your own payout id.
+     */
+    idempotencyKey?: string;
+}
+
+// The API never redirects. Not following redirects keeps the x-api-key and
+// x-api-secret headers from being replayed to another host.
+const REQUEST_OPTIONS = { timeout: 30_000, maxRedirects: 0 };
 
 export class SagaPayClient {
     private readonly baseURL: string;
@@ -58,6 +71,7 @@ export class SagaPayClient {
     public async createDeposit(data: CreateDepositRequest): Promise<CreateDepositResponse> {
         try {
             const response = await axios({
+                ...REQUEST_OPTIONS,
                 method: 'post',
                 url: `${this.baseURL}/create-deposit`,
                 headers: this.getHeaders(),
@@ -70,12 +84,20 @@ export class SagaPayClient {
         }
     }
 
-    public async createWithdrawal(data: CreateWithdrawalRequest): Promise<CreateWithdrawalResponse> {
+    public async createWithdrawal(
+        data: CreateWithdrawalRequest,
+        options: CreateWithdrawalOptions = {}
+    ): Promise<CreateWithdrawalResponse> {
         try {
+            const headers: Record<string, string> = this.getHeaders();
+            if (options.idempotencyKey !== undefined) {
+                headers['Idempotency-Key'] = options.idempotencyKey;
+            }
             const response = await axios({
+                ...REQUEST_OPTIONS,
                 method: 'post',
                 url: `${this.baseURL}/create-withdrawal`,
-                headers: this.getHeaders(),
+                headers,
                 data: data,
                 maxBodyLength: Infinity
             });
@@ -99,6 +121,7 @@ export class SagaPayClient {
             if (options.id) params.id = options.id;
 
             const response = await axios({
+                ...REQUEST_OPTIONS,
                 method: 'get',
                 url: `${this.baseURL}/check-transaction-status`,
                 headers: this.getHeaders(),
@@ -126,6 +149,7 @@ export class SagaPayClient {
             }
             
             const response = await axios({
+                ...REQUEST_OPTIONS,
                 method: 'get',
                 url: `${this.baseURL}/fetch-wallet-balance`,
                 headers: this.getHeaders(),
@@ -138,8 +162,9 @@ export class SagaPayClient {
     }
 
     /**
-     * Verifies an IPN notification against the SagaPay API. This is the primary
-     * way to check that a webhook you received is genuine.
+     * Confirms an IPN notification's transaction with the SagaPay API. Check the
+     * `X-Sagapay-Merchant-Signature` header with `verifyIpnSignature()` first;
+     * this network call is an extra check on top of it.
      *
      * Note: this endpoint authenticates via the request body — the SDK sends your
      * apiKey/apiSecret in the body and does NOT send the x-api-key/x-api-secret headers.
@@ -147,6 +172,7 @@ export class SagaPayClient {
     public async verifyIpn(data: VerifyIpnRequest): Promise<VerifyIpnResponse> {
         try {
             const response = await axios({
+                ...REQUEST_OPTIONS,
                 method: 'post',
                 url: `${this.baseURL}/verify-ipn`,
                 headers: { 'Content-Type': 'application/json' },

@@ -63,10 +63,12 @@ export interface IpnPayload {
     status: TransactionStatus; // currently always 'COMPLETED'
     address: string;
     networkType: NetworkType;
+    asset?: string | null; // token symbol, e.g. 'USDT'
+    contractAddress?: string | null; // token contract / mint; null for the chain's native coin
     amount: string;
     udf?: string | null;
     txHash?: string | null;
-    timestamp: string;
+    timestamp: string; // ISO 8601; set at completion and unchanged on retries
 }
 
 export interface VerifyIpnRequest {

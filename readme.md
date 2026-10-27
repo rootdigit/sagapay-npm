@@ -54,6 +54,8 @@ await client.createDeposit({
 ```
 
 ### Create Withdrawal
+Withdrawals need an API key created with **Withdrawals** turned on, which requires two-factor authentication on your account.
+
 ```javascript
 await client.createWithdrawal({
     networkType: 'ERC20',
@@ -62,8 +64,12 @@ await client.createWithdrawal({
     amount: '0.5',
     ipnUrl: 'https://callback.com/ipn',
     udf: 'withdrawal-123'    // Optional
+}, {
+    idempotencyKey: 'payout-123' // Optional, recommended
 });
 ```
+
+Pass an `idempotencyKey` (1-128 letters, digits, `-` or `_`) so that a retry after a timeout or network error cannot send the money twice. For 24 hours, a repeat with the same key returns the first withdrawal instead of creating another; while the first request is still running, a repeat fails with 409. Use one key per payout, such as your own payout id.
 **Response:**
 ```json
 {
@@ -164,6 +170,8 @@ When Sagapay sends a webhook to your endpoint, it will include the following pay
   "status": "COMPLETED",
   "address": "0x123abc...",
   "networkType": "ERC20|BEP20|TRC20|POLYGON|SOLANA",
+  "asset": "USDT",
+  "contractAddress": "0x55d398326f99059fF775485246999027B3197955",
   "amount": "10.5",
   "udf": "your-optional-user-defined-field",
   "txHash": "0xabc123...",
@@ -174,60 +182,77 @@ When Sagapay sends a webhook to your endpoint, it will include the following pay
 Notes:
 - `type` is UPPERCASE: `DEPOSIT` or `WITHDRAWAL`.
 - `status` is currently always `COMPLETED` — notifications are sent when a transaction completes.
+- `asset` and `contractAddress` say what was received. `contractAddress` is `null` for the chain's native coin. Always check them: `networkType` alone does not tell 100 TRX from 100 USDT.
 - `udf` and `txHash` may be `null`.
-
-Each webhook request also carries a signature header over the exact raw request body:
-
-```
-X-Sagapay-Signature: sha256=<hex HMAC-SHA256 of the raw body>
-```
-
-The signature is keyed with a **platform-issued IPN secret** — NOT your merchant `apiSecret`.
+- `timestamp` is set when the transaction completes and does not change on retries.
 
 ### Verifying Webhooks
-The primary verification is `client.verifyIpn()`, which asks the SagaPay API to confirm the transaction:
+Every webhook carries a signature over the exact raw request body:
+
+```
+X-Sagapay-Merchant-Signature: sha256=<hex HMAC-SHA256 of the raw body>
+```
+
+It is keyed with your **signing secret**. Copy it from the dashboard: **Webhooks → Signing secret**. It is not your API secret, and nobody else's secret can produce a valid signature for your notifications.
+
+Check the signature before you act on anything in the body:
 
 ```javascript
-import { SagaPayClient, parseIpnPayload } from 'sagapay-sdk';
+import { SagaPayClient, verifyIpnSignature, isIpnFresh, parseIpnPayload } from 'sagapay-sdk';
 
-const client = new SagaPayClient('your-api-key', 'your-api-secret');
-
-// Example with Express — use the raw body for webhooks
+// Example with Express — the signature is over the raw body, so do not let a
+// JSON parser run first.
 app.post('/ipn', express.raw({ type: 'application/json' }), async (req, res) => {
-    const payload = parseIpnPayload(req.body);
-
-    const { verified } = await client.verifyIpn({
-        txnHash: payload.txHash,
-        type: payload.type,       // 'DEPOSIT' | 'WITHDRAWAL'
-        amount: payload.amount,
-        address: payload.address
-    });
-
-    if (!verified) {
-        return res.status(400).send('Invalid IPN');
+    const valid = verifyIpnSignature(
+        req.body,                                    // exact raw body (Buffer or string)
+        req.headers['x-sagapay-merchant-signature'], // "sha256=<hex>"
+        process.env.SAGAPAY_SIGNING_SECRET           // Webhooks → Signing secret
+    );
+    if (!valid) {
+        return res.status(401).send('Invalid signature');
     }
 
-    // Process the notification (idempotently — delivery is at-least-once)
+    const payload = parseIpnPayload(req.body);
+
+    // Optional: refuse notifications older than 24 hours (the default).
+    if (!isIpnFresh(payload)) {
+        return res.status(400).send('Stale notification');
+    }
+
+    // Process each id once. Delivery is at-least-once, and a replayed request
+    // carries a valid signature too.
+    const firstTime = await markProcessed(payload.id); // e.g. INSERT ... ON CONFLICT DO NOTHING
+    if (firstTime) {
+        await fulfil(payload);
+    }
     res.status(200).send('OK');
 });
 ```
 
-Optionally, if you have your platform-issued IPN secret, you can additionally verify the signature header locally:
+The old `X-Sagapay-Signature` header was keyed with a secret shared by every merchant. It is retired: SagaPay no longer sends it, and this SDK no longer accepts it. Verify `X-Sagapay-Merchant-Signature` only.
+
+You can also confirm a transaction with the SagaPay API. This is a network round trip, so use it as an extra check rather than instead of the signature:
 
 ```javascript
-import { verifyIpnSignature } from 'sagapay-sdk';
-
-const valid = verifyIpnSignature(
-    req.body,                           // exact raw request body (string or Buffer)
-    req.headers['x-sagapay-signature'], // "sha256=<hex>"
-    process.env.SAGAPAY_IPN_SECRET      // platform IPN secret, NOT your apiSecret
-);
+const { verified } = await client.verifyIpn({
+    txnHash: payload.txHash,
+    type: payload.type,       // 'DEPOSIT' | 'WITHDRAWAL'
+    amount: payload.amount,
+    address: payload.address
+});
 ```
 
+### Replay protection
+A captured webhook still has a valid signature, so the signature alone does not stop someone resending it. Protect against that:
+- **Process each `id` once.** Record the ids you have handled (a unique column works) and acknowledge duplicates with a 200 without acting on them again. This is the main defence and also covers normal retries.
+- **Optionally check the age** with `isIpnFresh(payload, maxAgeSeconds)`. Keep the limit above the retry schedule (about 7.5 hours): retries reuse the original `timestamp`. A notification you resend from the dashboard also keeps it, so a resend older than your limit will be refused.
+- **Check what you are crediting.** Match `asset`, `contractAddress`, `amount` and `address` against the order before you fulfil it.
+
 ### Best Practices for Handling Webhooks
-- Verify every notification with `client.verifyIpn()` before trusting it
-- Implement idempotency to handle duplicate webhook notifications (delivery is at-least-once)
-- Return a 200 status code promptly to acknowledge receipt
+- Verify `X-Sagapay-Merchant-Signature` on every notification before trusting it
+- Keep your signing secret on the server, out of source control and client code
+- Implement idempotency on `id` to handle duplicates and replays (delivery is at-least-once)
+- Return a 2xx status code within 20 seconds to acknowledge receipt
 - Process webhook data asynchronously if business logic is complex
 - Store webhook data for reconciliation and debugging purposes
 
@@ -273,7 +298,7 @@ The `error` field carries the human-readable reason. The SDK surfaces it as the 
 - `/create-withdrawal`: 60 requests per minute
 - `/check-transaction-status`: 60 requests per minute
 - `/fetch-wallet-balance`: 100 requests per minute
-- **IPN retries:** 10 attempts max
+- **IPN delivery:** up to 6 attempts (retries after 1 min, 5 min, 15 min, 1 h and 6 h)
 - **Request timeout:** 30 seconds
 
 ### Types
